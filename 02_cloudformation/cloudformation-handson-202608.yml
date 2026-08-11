@@ -4,6 +4,7 @@ Description: CloudFormation hands-on for VPC, EC2, RDS, and ALB
 Parameters: {}
 
 Resources: 
+  # VPCを定義
   AppVpc:
     Type: AWS::EC2::VPC
     Properties:
@@ -13,5 +14,50 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-vpc"
+
+  # Subnetを4つ定義
+  PublicSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-subnet-az1"
+
+  PublicSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.11.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-subnet-az2"
+
+  PrivateSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.20.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-subnet-az1"
+
+  PrivateSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.21.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-subnet-az2"
 
 Outputs: {}
