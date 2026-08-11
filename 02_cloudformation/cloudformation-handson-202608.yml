@@ -60,4 +60,19 @@ Resources:
         - Key: Name
           Value: !Sub "${AWS::StackName}-private-subnet-az2"
 
+  # Internet Gatewayを定義
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-igw"
+  # Internet GatewayをVPCへ接続
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref AppVpc
+
+
 Outputs: {}
