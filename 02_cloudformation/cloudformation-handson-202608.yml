@@ -1,7 +1,18 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: CloudFormation hands-on for VPC, EC2, RDS, and ALB
 
-Parameters: {}
+Parameters:
+  Ec2InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+    Description: EC2 instance type for the application server
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI ID  # 最新の Amazon Linux 2023 AMI ID
 
 Resources: 
   # VPCを定義
@@ -210,5 +221,28 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGateway
+
+  # Private SubnetでWebサーバーとして動作するEC2を定義
+  AppInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateDefaultRoute
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref Ec2InstanceType
+      SubnetId: !Ref PrivateSubnetAz2
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -eux
+          dnf update -y
+          dnf install -y httpd
+          systemctl enable httpd
+          systemctl start httpd
+          echo "It works from EC2" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-app-ec2"
 
 Outputs: {}
