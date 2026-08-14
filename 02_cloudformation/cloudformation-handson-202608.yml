@@ -182,4 +182,33 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "${AWS::StackName}-rds-sg"
+
+  # NAT Gateway用のElastic IPを定義
+  NatGatewayEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-eip"
+
+  # Private Subnetから外向き通信を行うためのNAT Gatewayを定義
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      AllocationId: !GetAtt NatGatewayEip.AllocationId
+      SubnetId: !Ref PublicSubnetAz2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-gateway"
+
+  # Private SubnetからNAT Gatewayへのデフォルトルートを定義
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
 Outputs: {}
