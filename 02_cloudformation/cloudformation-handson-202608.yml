@@ -245,4 +245,15 @@ Resources:
         - Key: Name
           Value: !Sub "${AWS::StackName}-app-ec2"
 
+  # RDSを配置するPrivate SubnetをまとめるDB Subnet Groupを定義
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds:
+        - !Ref PrivateSubnetAz1
+        - !Ref PrivateSubnetAz2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-db-subnet-group"
 Outputs: {}
