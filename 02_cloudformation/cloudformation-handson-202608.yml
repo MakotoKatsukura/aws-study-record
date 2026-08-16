@@ -309,4 +309,49 @@ Resources:
         - Key: Name
           Value: !Sub "${AWS::StackName}-database"
 
+  # インターネットからHTTP通信を受け付けるALBを定義
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetAz1
+        - !Ref PublicSubnetAz2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-alb"
+
+  # ALBからEC2へHTTP通信を転送するTarget Groupを定義
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref AppVpc
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      Matcher:
+        HttpCode: "200"
+      Targets:
+        - Id: !Ref AppInstance
+          Port: 80
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-target-group"
+
+  # ALBのHTTP 80番で受けた通信をTarget Groupへ転送するListenerを定義
+  AppListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTargetGroup
 Outputs: {}
