@@ -1,0 +1,414 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation hands-on for VPC, EC2, RDS, and ALB
+
+Parameters:
+  Ec2InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+    Description: EC2 instance type for the application server
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI ID  # 最新の Amazon Linux 2023 AMI ID
+
+  DbInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t4g.micro
+    Description: RDS instance class for the application database
+
+  DbName:
+    Type: String
+    Default: sampledb
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    Description: Initial database name
+
+  DbMasterUsername:
+    Type: String
+    Default: admin
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    Description: Master username for the application database
+
+Resources: 
+  # VPCを定義
+  AppVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-vpc"
+
+  # Subnetを4つ定義
+  PublicSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: false
+      # EC2へのPublic IPv4自動割り当てと意図しない外部公開・課金を防ぐ
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-subnet-az1"
+
+  PublicSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.11.0/24
+      MapPublicIpOnLaunch: false
+      # EC2へのPublic IPv4自動割り当てと意図しない外部公開・課金を防ぐ
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-subnet-az2"
+
+  PrivateSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.20.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-subnet-az1"
+
+  PrivateSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.0.21.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-subnet-az2"
+
+  # Internet Gatewayを定義
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-igw"
+  # Internet GatewayをVPCへ接続
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref AppVpc
+
+  # Public Route Tableを定義
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AppVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-route-table"
+
+  # Public Route TableにInternet Gatewayへのルートを追加
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Public Subnet Az1をPublic Route Tableへ関連付け
+  PublicSubnetAz1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAz1
+      RouteTableId: !Ref PublicRouteTable
+
+  # Public Subnet Az2をPublic Route Tableへ関連付け
+  PublicSubnetAz2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAz2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private Route Tableを定義
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AppVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-route-table"
+
+  # Private Subnet Az1をPrivate Route Tableへ関連付け
+  PrivateSubnetAz1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAz1
+      RouteTableId: !Ref PrivateRouteTable
+
+  # Private Subnet Az2をPrivate Route Tableへ関連付け
+  PrivateSubnetAz2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAz2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ALB用Security Groupを定義
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic from the internet to ALB
+      VpcId: !Ref AppVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-alb-sg"
+
+  # EC2用Security Groupを定義
+  Ec2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic from ALB to EC2
+      VpcId: !Ref AppVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup # ALB用Security Groupが付いたリソースからの通信だけを許可
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-ec2-sg"
+
+  # RDS用Security Groupを定義
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow MySQL traffic from EC2 to RDS
+      VpcId: !Ref AppVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref Ec2SecurityGroup # EC2用Security Groupが付いたリソースからの通信だけを許可
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-rds-sg"
+
+  # NAT Gateway用のElastic IPを定義
+  NatGatewayEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-eip"
+
+  # Private Subnetから外向き通信を行うためのNAT Gatewayを定義
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      AllocationId: !GetAtt NatGatewayEip.AllocationId
+      SubnetId: !Ref PublicSubnetAz2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-gateway"
+
+  # Private SubnetからNAT Gatewayへのデフォルトルートを定義
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  # Private SubnetでWebサーバーとして動作するEC2を定義
+  AppInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateDefaultRoute
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref Ec2InstanceType
+      IamInstanceProfile: !Ref AppInstanceProfile
+      SubnetId: !Ref PrivateSubnetAz2
+      SecurityGroupIds:
+        - !Ref Ec2SecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -eux
+          dnf update -y
+          dnf install -y httpd
+          systemctl enable httpd
+          systemctl start httpd
+          echo "It works from EC2" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-app-ec2"
+
+  # RDSを配置するPrivate SubnetをまとめるDB Subnet Groupを定義
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds:
+        - !Ref PrivateSubnetAz1
+        - !Ref PrivateSubnetAz2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-db-subnet-group"
+
+  # Private Subnetにアプリケーション用RDSを定義
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties: # 基本設定
+      Engine: mysql
+      DBInstanceClass: !Ref DbInstanceClass # インスタンス性能・ストレージ
+      AllocatedStorage: "20"
+      StorageType: gp3
+      StorageEncrypted: true
+      # 認証情報
+      DBName: !Ref DbName
+      MasterUsername: !Ref DbMasterUsername # RDSが自動でSecrets Managerにパスワードを作って管理する
+      ManageMasterUserPassword: true
+
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: # セキュリティグループの紐付け
+        - !Ref RdsSecurityGroup
+      PubliclyAccessible: false
+      Port: "3306"
+
+      MultiAZ: false
+      BackupRetentionPeriod: 0
+      DeletionProtection: false
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-database"
+
+  # インターネットからHTTP通信を受け付けるALBを定義
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnetAz1
+        - !Ref PublicSubnetAz2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-alb"
+
+  # ALBからEC2へHTTP通信を転送するTarget Groupを定義
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref AppVpc
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      Matcher:
+        HttpCode: "200"
+      Targets:
+        - Id: !Ref AppInstance
+          Port: 80
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-target-group"
+
+  # ALBのHTTP 80番で受けた通信をTarget Groupへ転送するListenerを定義
+  AppListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTargetGroup
+
+  # Session ManagerからEC2へ接続するためのIAM Roleを定義
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-app-ec2-role"
+
+  # IAM RoleをEC2へ渡すためのInstance Profileを定義
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
+
+Outputs:
+  AlbDnsName:
+    Description: ALBのDNS名（ブラウザ動作確認で使う）
+    Value: !GetAtt AppLoadBalancer.DNSName
+
+  RdsEndpointAddress:
+    Description: RDSのエンドポイント（接続確認で使う）
+    Value: !GetAtt Database.Endpoint.Address
+
+  RdsEndpointPort:
+    Description: RDSのポート
+    Value: !GetAtt Database.Endpoint.Port
+
+  AlbSecurityGroupId:
+    Description: ALBのSecurity Group ID
+    Value: !Ref AlbSecurityGroup
+
+  Ec2SecurityGroupId:
+    Description: EC2のSecurity Group ID
+    Value: !Ref Ec2SecurityGroup
+
+  RdsSecurityGroupId:
+    Description: RDSのSecurity Group ID
+    Value: !Ref RdsSecurityGroup
+
+  RdsMasterUserSecretArn:
+    Description: RDSの認証情報が保存されたSecrets ManagerのARN
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
