@@ -251,6 +251,7 @@ Resources:
     Properties:
       ImageId: !Ref LatestAmiId
       InstanceType: !Ref Ec2InstanceType
+      IamInstanceProfile: !Ref AppInstanceProfile
       SubnetId: !Ref PrivateSubnetAz2
       SecurityGroupIds:
         - !Ref Ec2SecurityGroup
@@ -354,6 +355,32 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref AppTargetGroup
+
+  # Session ManagerからEC2へ接続するためのIAM Roleを定義
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-app-ec2-role"
+
+  # IAM RoleをEC2へ渡すためのInstance Profileを定義
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref AppInstanceRole
 
 Outputs:
   AlbDnsName:
