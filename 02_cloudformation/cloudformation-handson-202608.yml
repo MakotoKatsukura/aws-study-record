@@ -354,4 +354,32 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref AppTargetGroup
-Outputs: {}
+
+Outputs:
+  AlbDnsName:
+    Description: ALBのDNS名（ブラウザ動作確認で使う）
+    Value: !GetAtt AppLoadBalancer.DNSName
+
+  RdsEndpointAddress:
+    Description: RDSのエンドポイント（接続確認で使う）
+    Value: !GetAtt Database.Endpoint.Address
+
+  RdsEndpointPort:
+    Description: RDSのポート
+    Value: !GetAtt Database.Endpoint.Port
+
+  AlbSecurityGroupId:
+    Description: ALBのSecurity Group ID
+    Value: !Ref AlbSecurityGroup
+
+  Ec2SecurityGroupId:
+    Description: EC2のSecurity Group ID
+    Value: !Ref Ec2SecurityGroup
+
+  RdsSecurityGroupId:
+    Description: RDSのSecurity Group ID
+    Value: !Ref RdsSecurityGroup
+
+  RdsMasterUserSecretArn:
+    Description: RDSの認証情報が保存されたSecrets ManagerのARN
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
