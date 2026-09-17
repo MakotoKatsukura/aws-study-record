@@ -36,6 +36,10 @@ Parameters:
     AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
     Description: Master username for the application database
 
+  NotificationEmail:
+    Type: String
+    Description: CloudWatch Alarmの通知先のメールアドレス
+
 Resources: 
   # VPCを定義
   AppVpc:
@@ -248,7 +252,7 @@ Resources:
 
   # Private SubnetでWebサーバーとして動作するEC2を定義
   AppInstance:
-    Type: AWS::EC2::Instance
+    Type: AWS::EC2::Instance # 監視対象
     DependsOn: PrivateDefaultRoute
     Properties:
       ImageId: !Ref LatestAmiId
@@ -383,6 +387,39 @@ Resources:
     Properties:
       Roles:
         - !Ref AppInstanceRole
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-monitoring-topic"
+
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+      TopicArn: !Ref AlarmTopic
+
+  EC2CPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-ec2-cpu-utilization-alarm"
+      AlarmDescription: EC2のCPU使用率が70%以上の状態を検知する
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref AppInstance # CloudFormationが作成するEC2をCPU監視の対象にする
+      Unit: Percent
+      Period: 300
+      Statistic: Average
+      Threshold: 70 # CPU使用率が70%以上の状態を検知する
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      TreatMissingData: missing
+      AlarmActions:
+        - !Ref AlarmTopic
 
 Outputs:
   AlbDnsName:
