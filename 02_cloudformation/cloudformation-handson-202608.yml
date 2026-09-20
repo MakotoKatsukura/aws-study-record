@@ -318,7 +318,7 @@ Resources:
 
   # インターネットからHTTP通信を受け付けるALBを定義
   AppLoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer # WAFで検査する対象のALB
     Properties:
       Type: application
       Scheme: internet-facing
@@ -420,6 +420,70 @@ Resources:
       TreatMissingData: missing
       AlarmActions:
         - !Ref AlarmTopic
+
+  WafLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "aws-waf-logs-${AWS::StackName}"
+      RetentionInDays: 30
+
+  AppWebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub "${AWS::StackName}-web-acl"
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+
+      Rules:  # Web攻撃検知ルール
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 0
+          OverrideAction:
+            Count: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesCommonRuleSet
+            SampledRequestsEnabled: true
+
+        - Name: BlockWafTestPath # WAF遮断とCloudWatch Logs記録を確認するテスト用ルール
+          Priority: 1
+          Action:
+            Block: {}
+          Statement:
+            ByteMatchStatement:
+              FieldToMatch:
+                UriPath: {}
+              PositionalConstraint: EXACTLY
+              SearchString: /waf-block-test
+              TextTransformations:
+                - Priority: 0
+                  Type: NONE
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: BlockWafTestPath
+            SampledRequestsEnabled: true
+
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub "${AWS::StackName}-web-acl"
+        SampledRequestsEnabled: true
+
+  AppWebAclAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref AppLoadBalancer # 保護するALB
+      WebACLArn: !GetAtt AppWebAcl.Arn # 作成したWAFのWeb ACL
+
+  WafLoggingConfiguration:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      ResourceArn: !GetAtt AppWebAcl.Arn
+      LogDestinationConfigs:
+        - !GetAtt WafLogGroup.Arn
 
 Outputs:
   AlbDnsName:
