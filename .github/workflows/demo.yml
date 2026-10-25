@@ -1,0 +1,18 @@
+name: Actions demo
+
+on:
+  push:
+    branches:
+      - feature/terraform-cloudformation-rebuild
+    paths:
+      - .github/workflows/demo.yml
+
+permissions:
+  contents: read
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show message
+        run: echo "GitHub Actions is running"
