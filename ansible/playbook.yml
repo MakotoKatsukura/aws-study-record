@@ -1,0 +1,9 @@
+---
+- name: Install Java 21
+  hosts: ansible_lab
+  become: true
+  tasks:
+    - name: Install Amazon Corretto 21 headless
+      ansible.builtin.dnf:
+        name: java-21-amazon-corretto-headless
+        state: present
