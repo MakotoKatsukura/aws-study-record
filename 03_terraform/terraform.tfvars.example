@@ -1,0 +1,8 @@
+# Terraformで操作するAWSリージョン
+aws_region = "ap-northeast-1"
+
+# AWSリソースの名前・タグに使う共通の名前
+project_name = "terraform-cfn-rebuild"
+
+# 開発環境を表す名前
+environment = "dev"

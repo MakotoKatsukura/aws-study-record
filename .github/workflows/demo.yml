@@ -1,0 +1,41 @@
+name: Terraform test # GitHubのActions画面に表示する名前
+
+on:
+  push: # 指定したブランチに変更を送ったときに起動
+    branches:
+      - feature/terraform-cloudformation-rebuild
+    paths: # demo.yml または 03_terraform 内のファイルが変わった場合だけ起動
+      - .github/workflows/demo.yml
+      - 03_terraform/**
+  pull_request: # プルリクエストで変更を確認するときに起動
+    paths:
+      - .github/workflows/demo.yml
+      - 03_terraform/**
+
+permissions: # このジョブがリポジトリのコードを読むための権限
+  contents: read
+
+jobs:
+  terraform-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 03_terraform
+    env:
+      TF_VAR_notification_email: test@example.com
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.3
+
+      - name: Initialize Terraform without remote backend
+        run: terraform init -backend=false
+
+      - name: Run infrastructure tests
+        run: terraform test
