@@ -1,18 +1,20 @@
-name: Terraform test # GitHubのActions画面に表示する名前
+name: Terraform CI and CD
 
 on:
-  push: # 指定したブランチに変更を送ったときに起動
+  push:
     branches:
       - main
-    paths: # demo.yml または 03_terraform 内のファイルが変わった場合だけ起動
+    paths:
       - .github/workflows/demo.yml
       - 03_terraform/**
-  pull_request: # プルリクエストで変更を確認するときに起動
+  pull_request:
+    branches:
+      - main
     paths:
       - .github/workflows/demo.yml
       - 03_terraform/**
 
-permissions: # このジョブがリポジトリのコードを読むための権限
+permissions:
   contents: read
 
 jobs:
@@ -39,3 +41,32 @@ jobs:
 
       - name: Run infrastructure tests
         run: terraform test
+
+  terraform-deploy:
+    needs: terraform-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 03_terraform
+    env:
+      TF_VAR_notification_email: ${{ secrets.TF_VAR_NOTIFICATION_EMAIL }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.3
+
+      - name: Initialize Terraform with S3 backend
+        run: terraform init
+
+      - name: Create Terraform plan
+        run: terraform plan -out=tfplan
+
+      - name: Apply the Terraform plan
+        run: terraform apply -auto-approve tfplan
