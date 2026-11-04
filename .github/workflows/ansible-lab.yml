@@ -38,3 +38,51 @@ jobs:
             --group-ids "$SECURITY_GROUP_ID" \
             --query 'SecurityGroups[].GroupId' \
             --output text
+
+      # runnerの接続元IPだけにSSHを一時許可する
+      - name: Get runner public IP
+        id: runner-ip
+        run: echo "value=$(curl --fail --silent https://checkip.amazonaws.com)/32" >> "$GITHUB_OUTPUT"
+
+      - name: Add temporary SSH rule
+        id: add-ssh-rule
+        env:
+          SECURITY_GROUP_ID: ${{ vars.ANSIBLE_SECURITY_GROUP_ID }}
+          RUNNER_CIDR: ${{ steps.runner-ip.outputs.value }}
+        run: |
+          RULE_ID=$(aws ec2 authorize-security-group-ingress \
+            --group-id "$SECURITY_GROUP_ID" \
+            --protocol tcp \
+            --port 22 \
+            --cidr "$RUNNER_CIDR" \
+            --query 'SecurityGroupRules[0].SecurityGroupRuleId' \
+            --output text)
+          echo "rule_id=$RULE_ID" >> "$GITHUB_OUTPUT"
+
+      # 今回は疎通確認だけを行い、秘密鍵やPlaybook適用はまだ扱わない
+      - name: Check SSH port is reachable
+        env:
+          EC2_PUBLIC_IP: ${{ vars.ANSIBLE_EC2_PUBLIC_IP }}
+        run: timeout 5 bash -c "</dev/tcp/$EC2_PUBLIC_IP/22"
+
+      # 成功・失敗どちらでも一時ルールを削除する
+      - name: Remove temporary SSH rule
+        if: always() && steps.add-ssh-rule.outputs.rule_id != ''
+        env:
+          SSH_RULE_ID: ${{ steps.add-ssh-rule.outputs.rule_id }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --security-group-rule-ids "$SSH_RULE_ID"
+
+      - name: Verify temporary SSH rule is absent
+        if: always() && steps.add-ssh-rule.outputs.rule_id != ''
+        env:
+          SECURITY_GROUP_ID: ${{ vars.ANSIBLE_SECURITY_GROUP_ID }}
+          SSH_RULE_ID: ${{ steps.add-ssh-rule.outputs.rule_id }}
+        run: |
+          RULE_COUNT=$(aws ec2 describe-security-group-rules \
+            --filters "Name=group-id,Values=$SECURITY_GROUP_ID" \
+            --query "length(SecurityGroupRules[?SecurityGroupRuleId=='$SSH_RULE_ID'])" \
+            --output text)
+          test "$RULE_COUNT" = "0"
+          echo "Temporary SSH rule removed"
