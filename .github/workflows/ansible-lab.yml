@@ -69,9 +69,11 @@ jobs:
       - name: Remove temporary SSH rule
         if: always() && steps.add-ssh-rule.outputs.rule_id != ''
         env:
+          SECURITY_GROUP_ID: ${{ vars.ANSIBLE_SECURITY_GROUP_ID }}
           SSH_RULE_ID: ${{ steps.add-ssh-rule.outputs.rule_id }}
         run: |
           aws ec2 revoke-security-group-ingress \
+            --group-id "$SECURITY_GROUP_ID" \
             --security-group-rule-ids "$SSH_RULE_ID"
 
       - name: Verify temporary SSH rule is absent
