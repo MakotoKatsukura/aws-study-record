@@ -29,3 +29,12 @@ jobs:
         run: |
           aws sts get-caller-identity > /dev/null
           echo "AWS authentication OK"
+      # 対象のセキュリティグループをActionsから参照できるか確認
+      - name: Check target security group
+        env:
+          SECURITY_GROUP_ID: ${{ vars.ANSIBLE_SECURITY_GROUP_ID }}
+        run: |
+          aws ec2 describe-security-groups \
+            --group-ids "$SECURITY_GROUP_ID" \
+            --query 'SecurityGroups[].GroupId' \
+            --output text
