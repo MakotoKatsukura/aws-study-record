@@ -59,11 +59,47 @@ jobs:
             --output text)
           echo "rule_id=$RULE_ID" >> "$GITHUB_OUTPUT"
 
-      # 今回は疎通確認だけを行い、秘密鍵やPlaybook適用はまだ扱わない
-      - name: Check SSH port is reachable
+      # Secretの秘密鍵をrunner上の一時ファイルに保存する
+      - name: Prepare SSH private key
         env:
-          EC2_PUBLIC_IP: ${{ vars.ANSIBLE_EC2_PUBLIC_IP }}
-        run: timeout 5 bash -c "</dev/tcp/$EC2_PUBLIC_IP/22"
+          ANSIBLE_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+        run: |
+          KEY_FILE="$RUNNER_TEMP/ansible-lab-key"
+          umask 077
+          printf '%s\n' "$ANSIBLE_SSH_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+        id: ssh-key
+
+      - name: Check Ansible connection
+        env:
+          KEY_FILE: ${{ steps.ssh-key.outputs.key_file }}
+        run: ansible ansible_lab -i ansible/inventory.ini -m ansible.builtin.ping --private-key "$KEY_FILE"
+
+      # 実際に変更する前に、変更内容を確認する
+      - name: Run Ansible dry run
+        env:
+          KEY_FILE: ${{ steps.ssh-key.outputs.key_file }}
+        run: ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --private-key "$KEY_FILE" --check
+
+      - name: Apply Ansible playbook
+        env:
+          KEY_FILE: ${{ steps.ssh-key.outputs.key_file }}
+        run: ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --private-key "$KEY_FILE"
+
+      - name: Verify Java version
+        env:
+          KEY_FILE: ${{ steps.ssh-key.outputs.key_file }}
+        run: ansible ansible_lab -i ansible/inventory.ini -m ansible.builtin.command -a "java -version" --private-key "$KEY_FILE"
+
+      # 2回目の実行でchanged=0となり、冪等であることを確認する
+      - name: Verify Ansible idempotence
+        env:
+          KEY_FILE: ${{ steps.ssh-key.outputs.key_file }}
+        run: |
+          set -o pipefail
+          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --private-key "$KEY_FILE" | tee "$RUNNER_TEMP/ansible-idempotence.log"
+          grep -Eq 'changed=0([[:space:]]|$)' "$RUNNER_TEMP/ansible-idempotence.log"
 
       # 成功・失敗どちらでも一時ルールを削除する
       - name: Remove temporary SSH rule
@@ -88,3 +124,7 @@ jobs:
             --output text)
           test "$RULE_COUNT" = "0"
           echo "Temporary SSH rule removed"
+
+      - name: Remove temporary SSH private key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/ansible-lab-key"
