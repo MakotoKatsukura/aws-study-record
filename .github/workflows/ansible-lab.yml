@@ -18,3 +18,14 @@ jobs:
         run: python -m pip install ansible-core
       - name: Check Playbook syntax
         run: ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --syntax-check
+      # 既存のActionsワークフローにAWS認証の確認を追加
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+      - name: Check AWS authentication
+        run: |
+          aws sts get-caller-identity > /dev/null
+          echo "AWS authentication OK"
