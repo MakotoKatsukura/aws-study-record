@@ -23,6 +23,7 @@
         owner: ec2-user
         group: ec2-user
         mode: "0644"
+      notify: Restart Hello AWS application
 
     - name: Install systemd service
       ansible.builtin.copy:
