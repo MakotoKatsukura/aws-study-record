@@ -14,6 +14,6 @@ public class HelloAwsApplication {
 
     @GetMapping("/")
     public String hello() {
-        return "Hello, AWS!";
+        return "Hello, AWS! (Ansible)";
     }
 }
