@@ -1,0 +1,37 @@
+name: AWS authentication check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-auth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check AWS identity
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-northeast-1
+          AWS_PAGER: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CALLER_ARN=$(aws sts get-caller-identity --query Arn --output text)
+
+          case "$CALLER_ARN" in
+            arn:aws:iam::*:user/StudyUserKura)
+              echo "AWS authentication succeeded."
+              echo "IAM user matches StudyUserKura."
+              ;;
+            *)
+              echo "AWS authentication succeeded."
+              echo "The identity differs from StudyUserKura."
+              exit 1
+              ;;
+          esac
